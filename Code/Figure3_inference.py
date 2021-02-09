@@ -3,7 +3,6 @@
 
 import pandas as pd
 import pystan
-import stan_utility
 import numpy as np
 import matplotlib.pyplot as plt 
 from matplotlib import cm
@@ -568,16 +567,17 @@ dat = {
 
 sm = pystan.StanModel(model_code=model1)
 
-fit = sm.sampling(data=dat, seed=194838, iter=4000, chains=8, control=dict(adapt_delta=0.95))
+fit = sm.sampling(data=dat, seed=194838, iter=2000, chains=8, control=dict(adapt_delta=0.95))
 
 with open('model_3.pkl', 'wb') as f:
     pickle.dump(sm, f)
     
 with open('fit_3.pkl', 'wb') as g:
     pickle.dump(fit, g)
-    
-#%%
-# MODEL4 
+
+#%%     
+
+# MODEL4
 
 model1 = """
 data{
@@ -604,38 +604,38 @@ data{
     real w;
 }
 parameters{
-    cholesky_factor_cov[2] L_RC;
-    cholesky_factor_cov[2] L_BC;
-    real burstCry1;
-    real burstNr1d1;
-    real burstBmal1;
-    real eta_Cry1RC[N1];
-    real eta_Nr1d1RC[N1];
-    real eta_Cry1BC[N2];
-    real eta_Bmal1BC[N2];
-}
-transformed parameters {
-    matrix[2, 2] cov_vec_RC;
-    vector[2] mu_vec_RC;
-    matrix[2, 2] cov_vec_BC;
-    vector[2] mu_vec_BC;  
+    real<lower=0> burstCry1;
+    real<lower=0> burstNr1d1;
+    real<lower=0> burstBmal1;
+    matrix[N1,2] eta_RC;
+    matrix[N2,2] eta_BC;
     real<lower=0> stdevCry1;
     real<lower=0> stdevNr1d1; 
     real<lower=0> stdevBmal1; 
-    real<lower=-1, upper=1> corrRC;
-    real<lower=-1, upper=1> corrBC;
-    cov_vec_RC = L_RC*L_RC';
-    cov_vec_BC = L_BC*L_BC';
+    cholesky_factor_corr[2] L_RC;
+    cholesky_factor_corr[2] L_BC;
+}
+transformed parameters{
+    matrix[2, 2] corr_RC;
+    matrix[2, 2] cov_RC;
+    vector[2] mu_vec_RC;
+    vector[2] sigma_vec_RC;
+    matrix[2, 2] corr_BC;
+    matrix[2, 2] cov_BC;
+    vector[2] mu_vec_BC;
+    vector[2] sigma_vec_BC;
+    corr_RC = L_RC*L_RC';
+    corr_BC = L_BC*L_BC';
     mu_vec_RC[1] = burstCry1;
     mu_vec_RC[2] = burstNr1d1;
-    stdevCry1 = (cov_vec_RC[1,1])^0.5;
-    stdevNr1d1 = (cov_vec_RC[2,2])^0.5; 
-    corrRC = cov_vec_RC[1,2]/((stdevCry1)*(stdevNr1d1));
     mu_vec_BC[1] = burstCry1;
     mu_vec_BC[2] = burstBmal1;
-    stdevCry1 = (cov_vec_BC[1,1])^0.5;
-    stdevBmal1 = (cov_vec_BC[2,2])^0.5; 
-    corrBC = cov_vec_BC[1,2]/((stdevCry1)*(stdevBmal1));      
+    sigma_vec_RC[1] = stdevCry1;
+    sigma_vec_RC[2] = stdevNr1d1;
+    sigma_vec_BC[1] = stdevCry1;
+    sigma_vec_BC[2] = stdevBmal1; 
+    cov_RC = quad_form_diag(corr_RC, sigma_vec_RC);
+    cov_BC = quad_form_diag(corr_BC, sigma_vec_BC);
 }
 model{
     vector[N1] mu1;
@@ -654,13 +654,9 @@ model{
     real f2;
     real f3;
     real f4;
-    vector[2] prior_eta;
     vector[2] rescaled_eta;
     for ( i in 1:N1 ) {
-        prior_eta[1] = eta_Cry1RC[i];
-        prior_eta[2] = eta_Nr1d1RC[i];
-        rescaled_eta = mu_vec_RC + L_RC*prior_eta;
-        prior_eta ~ normal(0, 1);
+        rescaled_eta = mu_vec_RC + diag_pre_multiply(sigma_vec_RC,L_RC)*(eta_RC[i,:]');
         b1 = exp(beta_v_Cry1*log(AreaNormed_RC[i])+rescaled_eta[1]);
         b2 = exp(beta_v_Nr1d1*log(AreaNormed_RC[i])+rescaled_eta[2]);
         f1 = freq_scaleCry1*(Cry1_params[1]/2+Cry1_params[2]*cos(jtime_RC[i]*w-Cry1_params[4])+Cry1_params[3]*cos(2*jtime_RC[i]*w-Cry1_params[5]));
@@ -671,10 +667,7 @@ model{
         r2[i] = f2;
     } 
     for ( i in 1:N2 ) {
-        prior_eta[1] = eta_Cry1BC[i];
-        prior_eta[2] = eta_Bmal1BC[i];
-        rescaled_eta = mu_vec_BC + L_BC*prior_eta;
-        prior_eta ~ normal(0, 1);
+        rescaled_eta = mu_vec_BC + diag_pre_multiply(sigma_vec_BC,L_BC)*(eta_BC[i,:]');
         b3 = exp(beta_v_Cry1*log(AreaNormed_BC[i])+rescaled_eta[1]);
         b4 = exp(beta_v_Bmal1*log(AreaNormed_BC[i])+rescaled_eta[2]);
         f3 = freq_scaleCry1*(Cry1_params[1]/2+Cry1_params[2]*cos(jtime_BC[i]*w-Cry1_params[4])+Cry1_params[3]*cos(2*jtime_BC[i]*w-Cry1_params[5]));
@@ -688,70 +681,71 @@ model{
     CountsNr1d1_RC ~ neg_binomial_2( mu2 , r2 );
     CountsCry1_BC ~ neg_binomial_2( mu3 , r3 );
     CountsBmal1_BC ~ neg_binomial_2( mu4 , r4 );
+    to_vector(eta_RC) ~ normal(0, 1);
+    to_vector(eta_BC) ~ normal(0, 1);
     burstCry1 ~ normal(0, 100);
     burstNr1d1 ~ normal(0, 100);
     burstBmal1 ~ normal(0, 100);
     L_RC ~ lkj_corr_cholesky(4.0);
     L_BC ~ lkj_corr_cholesky(4.0);
+    stdevCry1 ~ normal(0, 100);
+    stdevNr1d1 ~ normal(0, 100);
+    stdevBmal1 ~ normal(0, 100);
 }
 generated quantities{ 
-    vector[N1] log_lik1;
-    vector[N1] log_lik2;
-    vector[N2] log_lik3;
-    vector[N2] log_lik4;
-    real mu1;
-    real mu2;
-    real mu3;
-    real mu4;
-    real r1;
-    real r2;
-    real r3;
-    real r4;
-    real b1;
-    real b2;
-    real b3;
-    real b4;
-    real f1;
-    real f2;
-    real f3;
-    real f4;
-    vector[2] prior_eta;
-    vector[2] rescaled_eta;
-    for ( i in 1:N1 ) {
- prior_eta[1] = eta_Cry1RC[i];
-        prior_eta[2] = eta_Nr1d1RC[i];
-        rescaled_eta = mu_vec_RC + L_RC*prior_eta;
-        b1 = exp(beta_v_Cry1*log(AreaNormed_RC[i])+rescaled_eta[1]);
-        b2 = exp(beta_v_Nr1d1*log(AreaNormed_RC[i])+rescaled_eta[2]);
-        f1 = freq_scaleCry1*(Cry1_params[1]/2+Cry1_params[2]*cos(jtime_RC[i]*w-Cry1_params[4])+Cry1_params[3]*cos(2*jtime_RC[i]*w-Cry1_params[5]));
-        f2 = freq_scaleNr1d1*(Nr1d1_params[1]/2+Nr1d1_params[2]*cos(jtime_RC[i]*w-Nr1d1_params[4])+Nr1d1_params[3]*cos(2*jtime_RC[i]*w-Nr1d1_params[5]));
-        mu1 = b1*f1;
-        mu2 = b2*f2;
-        r1 = f1;
-        r2 = f2;
-        log_lik1[i] = neg_binomial_2_lpmf(CountsCry1_RC[i] | mu1 , r1);
-        log_lik2[i] = neg_binomial_2_lpmf(CountsNr1d1_RC[i] | mu2 , r2);
-    } 
-    for ( i in 1:N2 ) {
-       prior_eta[1] = eta_Cry1BC[i];
-        prior_eta[2] = eta_Bmal1BC[i];
-        rescaled_eta = mu_vec_BC + L_BC*prior_eta;
-        b3 = exp(beta_v_Cry1*log(AreaNormed_BC[i])+rescaled_eta[1]);
-        b4 = exp(beta_v_Bmal1*log(AreaNormed_BC[i])+rescaled_eta[2]);
-        f3 = freq_scaleCry1*(Cry1_params[1]/2+Cry1_params[2]*cos(jtime_BC[i]*w-Cry1_params[4])+Cry1_params[3]*cos(2*jtime_BC[i]*w-Cry1_params[5]));
-        f4 = freq_scaleBmal1*(Bmal1_params[1]/2+Bmal1_params[2]*cos(jtime_BC[i]*w-Bmal1_params[4])+Bmal1_params[3]*cos(2*jtime_BC[i]*w-Bmal1_params[5]));
-        mu3 = b3*f3;
-        mu4 = b4*f4;
-        r3 = f3;
-        r4 = f4;
-        log_lik3[i] = neg_binomial_2_lpmf(CountsCry1_BC[i] | mu3 , r3);
-        log_lik4[i] = neg_binomial_2_lpmf(CountsBmal1_BC[i] | mu4 , r4);
-    } 
-    
+vector[N1] log_lik1;
+vector[N1] log_lik2;
+vector[N2] log_lik3;
+vector[N2] log_lik4;
+real mu1;
+real mu2;
+real mu3;
+real mu4;
+real r1;
+real r2;
+real r3;
+real r4;
+real b1;
+real b2;
+real b3;
+real b4;
+real f1;
+real f2;
+real f3;
+real f4;
+vector[2] rescaled_eta;
+for ( i in 1:N1 ) {
+    rescaled_eta = mu_vec_RC + diag_pre_multiply(sigma_vec_RC,L_RC)*(eta_RC[i,:]');
+    b1 = exp(beta_v_Cry1*log(AreaNormed_RC[i])+rescaled_eta[1]);
+    b2 = exp(beta_v_Nr1d1*log(AreaNormed_RC[i])+rescaled_eta[2]);
+    f1 = freq_scaleCry1*(Cry1_params[1]/2+Cry1_params[2]*cos(jtime_RC[i]*w-Cry1_params[4])+Cry1_params[3]*cos(2*jtime_RC[i]*w-Cry1_params[5]));
+    f2 = freq_scaleNr1d1*(Nr1d1_params[1]/2+Nr1d1_params[2]*cos(jtime_RC[i]*w-Nr1d1_params[4])+Nr1d1_params[3]*cos(2*jtime_RC[i]*w-Nr1d1_params[5]));
+    mu1 = b1*f1;
+    mu2 = b2*f2;
+    r1 = f1;
+    r2 = f2;
+    log_lik1[i] = neg_binomial_2_lpmf(CountsCry1_RC[i] | mu1 , r1);
+    log_lik2[i] = neg_binomial_2_lpmf(CountsNr1d1_RC[i] | mu2 , r2);
+} 
+for ( i in 1:N2 ) {
+    rescaled_eta = mu_vec_BC + diag_pre_multiply(sigma_vec_BC,L_BC)*(eta_BC[i,:]');
+    b3 = exp(beta_v_Cry1*log(AreaNormed_BC[i])+rescaled_eta[1]);
+    b4 = exp(beta_v_Bmal1*log(AreaNormed_BC[i])+rescaled_eta[2]);
+    f3 = freq_scaleCry1*(Cry1_params[1]/2+Cry1_params[2]*cos(jtime_BC[i]*w-Cry1_params[4])+Cry1_params[3]*cos(2*jtime_BC[i]*w-Cry1_params[5]));
+    f4 = freq_scaleBmal1*(Bmal1_params[1]/2+Bmal1_params[2]*cos(jtime_BC[i]*w-Bmal1_params[4])+Bmal1_params[3]*cos(2*jtime_BC[i]*w-Bmal1_params[5]));
+    mu3 = b3*f3;
+    mu4 = b4*f4;
+    r3 = f3;
+    r4 = f4;
+    log_lik3[i] = neg_binomial_2_lpmf(CountsCry1_BC[i] | mu3 , r3);
+    log_lik4[i] = neg_binomial_2_lpmf(CountsBmal1_BC[i] | mu4 , r4);
+} 
 
-}        
+
+}       
+
 """
-#%%
+
 # load parameters from model M2
 
 sm = pickle.load(open('model_2.pkl', 'rb'))
@@ -799,5 +793,7 @@ with open('model_4.pkl', 'wb') as f:
     pickle.dump(sm, f)
     
 with open('fit_4.pkl', 'wb') as g:
-    pickle.dump(fit, g)
+    pickle.dump(fit, g)   
     
+a = fit.extract(permuted=True)     
+  

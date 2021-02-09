@@ -24,7 +24,6 @@ plt.style.use('seaborn-ticks')
 
 from mpl_toolkits.mplot3d import Axes3D
 
-
 #%%
 ### load data ###
 dat_RC = pd.read_csv('smFISH_RC.csv')
@@ -33,6 +32,7 @@ jtime_RC = dat_RC['Time'].values
 AreaNormed_RC = dat_RC['AreaNormed'].values
 CountsNr1d1_RC = dat_RC['Counts Nr1d1'].values
 CountsCry1_RC = dat_RC['Counts Cry1'].values
+Slide_RC = dat_RC['Slide'].values
 
 dat_BC = pd.read_csv('smFISH_BC.csv')
 
@@ -40,37 +40,48 @@ jtime_BC = dat_BC['Time'].values
 AreaNormed_BC = dat_BC['AreaNormed'].values
 CountsBmal1_BC = dat_BC['Counts Bmal1'].values
 CountsCry1_BC = dat_BC['Counts Cry1'].values
+Slide_BC = dat_BC['Slide'].values
 
 CountsCry1TOT = np.concatenate((CountsCry1_BC,CountsCry1_RC))
 jtime_Cry1TOT = np.concatenate((jtime_BC,jtime_RC))
+Slide_Cry1TOT = np.concatenate((Slide_RC,Slide_BC+3))
 
 w = 2 * np.pi / 24 
 
 #%%
-# caluculate mean and standard error for mean mRNA levels at each time point
+# calculate mean and standard error for mean mRNA levels at each time point
 
-def get_mean_and_stderror(Counts,jtime,Timevec):
-    
+def get_mean_and_stderror(Counts,jtime,Timevec,slides):
+     
     mean_count = np.zeros(len(Timevec))
     std_err = np.zeros(len(Timevec))
+    slides_unique = np.unique(slides)
+    mean_slides = []
+    time_slides = []
     
     for i in range(len(Timevec)):
-        datcurr = Counts[jtime == Timevec[i]]
-        mean_count[i] = np.mean(datcurr)
-        std_err[i] = np.std(datcurr)/np.sqrt(len(datcurr)-1)
+        slides_curr = slides[jtime == Timevec[i]]
+        slides_unique = np.unique(slides_curr)
+        mean_slides_curr = []
+        time_slides_curr = []
+        for j in range(len(slides_unique)):
+            datcurr = Counts[(jtime == Timevec[i]) & (slides == slides_unique[j])]
+            mean_slides_curr.append(np.mean(datcurr))
+            time_slides_curr.append(Timevec[i])
+        mean_count[i] = np.mean(mean_slides_curr)    
+        std_err[i] = np.std(mean_slides_curr)
+        mean_slides.extend(mean_slides_curr)
+        time_slides.extend(time_slides_curr)
         
-    return mean_count, std_err     
+    return mean_count, std_err, mean_slides, time_slides    
 
 TimevecRC = np.array([21.,25.,29.,33.,37.,41.]).reshape(-1,1)
 TimevecBC = np.array([17.,21.,25.,29.,33.,37.,41.]).reshape(-1,1)
     
-MeanNr1d1, StdErrNr1d1 =  get_mean_and_stderror(CountsNr1d1_RC,jtime_RC,TimevecRC)  
-MeanCry1, StdErrCry1 =  get_mean_and_stderror(CountsCry1TOT,jtime_Cry1TOT,TimevecBC)  
-MeanBmal1, StdErrBmal1 =  get_mean_and_stderror(CountsBmal1_BC,jtime_BC,TimevecBC)  
+MeanNr1d1, StdErrNr1d1, mean_slidesNr1d1, time_slidesNr1d1 =  get_mean_and_stderror(CountsNr1d1_RC,jtime_RC,TimevecRC,Slide_RC)  
+MeanCry1, StdErrCry1, mean_slidesCry1, time_slidesCry1 =  get_mean_and_stderror(CountsCry1TOT,jtime_Cry1TOT,TimevecBC,Slide_Cry1TOT)  
+MeanBmal1, StdErrBmal1, mean_slidesBmal1, time_slidesBmal1 =  get_mean_and_stderror(CountsBmal1_BC,jtime_BC,TimevecBC,Slide_BC)  
 
-avgstdNr1d1 = np.mean(StdErrNr1d1)
-avgstdBmal1 = np.mean(StdErrBmal1)
-avgstdCry1 = np.mean(StdErrCry1)
 #%%
 # Fit two-harmonic cosinor model
 
@@ -80,8 +91,8 @@ def func(x, A0, A1, A2, phi_1, phi_2):
     return y.flatten()
 
 
-xdata = TimevecRC.flatten()
-ydata = MeanNr1d1.flatten()
+xdata = np.array(time_slidesNr1d1)
+ydata = np.array(mean_slidesNr1d1)
 
 popt, pcov = curve_fit(func, xdata, ydata)
 
@@ -91,8 +102,10 @@ pred = func(xtest, *popt)
 x_predNr1d1 = xtest
 y_predNr1d1 = pred
 
-xdata = TimevecBC.flatten()
-ydata = MeanCry1.flatten()
+Nr1d1_params = popt
+
+xdata = np.array(time_slidesCry1)
+ydata = np.array(mean_slidesCry1)
 
 popt, pcov = curve_fit(func, xdata, ydata)
 
@@ -102,17 +115,20 @@ pred = func(xtest, *popt)
 x_predCry1 = xtest
 y_predCry1 = pred
 
-xdata = TimevecBC.flatten()
-ydata = MeanBmal1.flatten()
+Cry1_params = popt
+
+xdata = np.array(time_slidesBmal1)
+ydata = np.array(mean_slidesBmal1)
 
 popt, pcov = curve_fit(func, xdata, ydata)
+
 xtest = np.linspace(17,42,100)
 pred = func(xtest, *popt)
 
 x_predBmal1 = xtest
 y_predBmal1 = pred
 
-    
+Bmal1_params = popt    
 #%%
 # Plot mean mRNA levels along with two-harmonic cosinor fit
 
@@ -120,18 +136,15 @@ fig = plt.figure(figsize=(19/2.54,16/2.54))
 
 plt.subplot(3,2,1)
 
-plt.errorbar(TimevecRC, MeanNr1d1, 2*StdErrNr1d1, marker='o', mfc='blue',
-         mec='blue', ms=2, mew=2,linestyle='',capsize=2,ecolor='blue',label='Nr1d1') 
-plt.errorbar(TimevecBC, MeanCry1, 2*StdErrCry1, marker='o', mfc='green',
-         mec='green', ms=2, mew=2,linestyle='',capsize=2,ecolor='green',label='Cry1')
-plt.errorbar(TimevecBC, MeanBmal1, 2*StdErrBmal1, marker='o', mfc='red',
-         mec='red', ms=2, mew=2,linestyle='',capsize=2,ecolor='red',label='Bmal1')  
+plt.scatter(time_slidesNr1d1, mean_slidesNr1d1, s=5, color='blue',alpha=0.8,label='Nr1d1') 
+plt.scatter(time_slidesCry1, mean_slidesCry1, s=5, color='green',alpha=0.8,label='Cry1') 
+plt.scatter(time_slidesBmal1, mean_slidesBmal1, s=5, color='red',alpha=0.8,label='Bmal1') 
 
 plt.plot(x_predNr1d1,y_predNr1d1,color='blue',alpha=0.5)
 plt.plot(x_predCry1,y_predCry1,color='green',alpha=0.5)
 plt.plot(x_predBmal1,y_predBmal1,color='red',alpha=0.5)
 
-legend = plt.legend(loc='upper center', shadow=True)
+legend = plt.legend(loc='upper center', shadow=False, frameon=True)
 
 plt.xlabel('Time (after Dex) (hours)')
 plt.ylabel('Mean mRNA/ cell')
@@ -239,8 +252,10 @@ plt.xlabel('mRNA/cell')
 plt.tight_layout()
 
 # to save cosinor fit parameters
-##%%
-#import pickle
+
+#%%
+import pickle
 #
-#with open('FourierParams.pkl', 'wb') as f:  # Python 3: open(..., 'wb')
-#    pickle.dump([Nr1d1_params, Cry1_params, Bmal1_params], f) 
+
+with open('FourierParams.pkl', 'wb') as f:  # Python 3: open(..., 'wb')
+    pickle.dump([Nr1d1_params, Cry1_params, Bmal1_params], f) 

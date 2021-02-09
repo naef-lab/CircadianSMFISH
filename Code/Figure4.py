@@ -3,7 +3,6 @@
 
 import pandas as pd
 import pystan
-import stan_utility
 import numpy as np
 import matplotlib.pyplot as plt 
 from matplotlib import cm
@@ -26,7 +25,6 @@ plt.rcParams['pdf.fonttype'] = 42
 from IPython import get_ipython
 get_ipython().run_line_magic('matplotlib', 'qt')
 plt.style.use('seaborn-white')
-
 
 #%%
 # load in required parameters
@@ -73,10 +71,10 @@ burstalphaNr1d1 = np.mean(a['burstNr1d1'],axis=0)
 burstalphaBmal1 = np.mean(a['burstBmal1'],axis=0)
 
 mu_RC = np.mean(a['mu_vec_RC'],axis=0)#.reshape(-1,1)
-Cov_RC = np.mean(a['cov_vec_RC'],axis=0)
+Cov_RC = np.mean(a['cov_RC'],axis=0)
 
 mu_BC = np.mean(a['mu_vec_BC'],axis=0)#.reshape(-1,1)
-Cov_BC = np.mean(a['cov_vec_BC'],axis=0)
+Cov_BC = np.mean(a['cov_BC'],axis=0)
 
 Nr1d1_params, Cry1_params, Bmal1_params = pickle.load(open('FourierParams.pkl', 'rb'))
 
@@ -165,7 +163,6 @@ def simulate_model(its):
     
 synthCry1, synthNr1d1, synthBmal1, area, r1_vec, r2_vec, r3_vec, eta, mu_vec_Cry1, mu_vec_Nr1d1, mu_vec_Bmal1, vargamm_Cry1, vargamm_Nr1d1, vargamm_Bmal1 = simulate_model(100)
 
-#%%
 
 def component_variance(X1,X2,X3):
     var_1 = np.var(X1*np.mean(X2)*np.mean(X3))
@@ -230,6 +227,8 @@ var_poiss_Bmal1 = np.mean(mu_vec_Bmal1)
 var_tot_Bmal1 = var_eta_Bmal1+var_area_Bmal1+var_t_Bmal1+var_burst_Bmal1+var_poiss_Bmal1
 var_tot_synth_Bmal1 = np.var(synthBmal1)
 mean_tot_synth_Bmal1 = np.mean(synthBmal1)
+
+#%%
 
 def GetTimeVar(num_cells):    
     its = 10000

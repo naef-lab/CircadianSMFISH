@@ -3,7 +3,6 @@
 
 import pandas as pd
 import pystan
-import stan_utility
 import numpy as np
 import matplotlib.pyplot as plt 
 from matplotlib import cm
@@ -45,7 +44,19 @@ looM2, loosM2, ksM2 = ps(log_lik)
 sm = pickle.load(open('model_3.pkl', 'rb'))
 fit = pickle.load(open('fit_3.pkl', 'rb')) 
 a = fit.extract(permuted=True)
-log_lik = np.hstack((a['log_lik1'][1500:2000],a['log_lik2'][1500:2000],a['log_lik3'][1500:2000],a['log_lik4'][1500:2000]))
+
+chain_length = 1000
+num_chains = 8
+
+lik_chain = np.zeros(num_chains)
+    
+for chain in range(num_chains):
+    lik_chain_curr = np.hstack((a['log_lik1'][chain*chain_length:chain*chain_length+chain_length],a['log_lik2'][chain*chain_length:chain*chain_length+chain_length],a['log_lik3'][chain*chain_length:chain*chain_length+chain_length],a['log_lik4'][chain*chain_length:chain*chain_length+chain_length]))
+    lik_chain[chain] = np.sum(np.mean(lik_chain_curr,axis=0))
+
+best_chain = np.argmax(lik_chain)
+    
+log_lik = np.hstack((a['log_lik1'][best_chain*chain_length:best_chain*chain_length+chain_length],a['log_lik2'][best_chain*chain_length:best_chain*chain_length+chain_length],a['log_lik3'][best_chain*chain_length:best_chain*chain_length+chain_length],a['log_lik4'][best_chain*chain_length:best_chain*chain_length+chain_length]))
 looM3, loosM3, ksM3 = ps(log_lik)
 
 sm = pickle.load(open('model_4.pkl', 'rb'))
@@ -54,6 +65,7 @@ a = fit.extract(permuted=True)
 log_lik = np.hstack((a['log_lik1'],a['log_lik2'],a['log_lik3'],a['log_lik4']))
 looM4, loosM4, ksM4 = ps(log_lik)
 
+#%%
 fig = plt.figure(figsize=(5/2.54,3.5/2.54))
 plt.bar(range(4),[looM1,looM2,looM3,looM4],tick_label = ['M1','M2','M3','M4'])
 plt.ylim([-44250,-42250])
@@ -86,8 +98,8 @@ burstalphaBmal1 = a['burstBmal1']
 stdevCry1 = a['stdevCry1']
 stdevNr1d1 = a['stdevNr1d1']
 stdevBmal1 = a['stdevBmal1']
-corrRC = a['corrRC']
-corrBC = a['corrBC']
+corrRC = a['corr_RC'][:,0,1]
+corrBC = a['corr_BC'][:,0,1]
 
 Nr1d1_params, Cry1_params, Bmal1_params = pickle.load(open('FourierParams.pkl', 'rb'))
 #%%
@@ -223,10 +235,10 @@ fit = pickle.load(open('fit_4.pkl', 'rb'))
 a = fit.extract(permuted=True)
 
 mu_RC = np.mean(a['mu_vec_RC'],axis=0)#.reshape(-1,1)
-Cov_RC = np.mean(a['cov_vec_RC'],axis=0)
+Cov_RC = np.mean(a['cov_RC'],axis=0)
 
 mu_BC = np.mean(a['mu_vec_BC'],axis=0)#.reshape(-1,1)
-Cov_BC = np.mean(a['cov_vec_BC'],axis=0)
+Cov_BC = np.mean(a['cov_BC'],axis=0)
 
 Nr1d1_params, Cry1_params, Bmal1_params = pickle.load(open('FourierParams.pkl', 'rb'))
 #%%
